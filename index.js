@@ -6,7 +6,7 @@ const axios = require("axios");
 const app = express();
 
 /* =====================================================
-   REQUIRED for Railway / proxies (rate-limit fix)
+   REQUIRED for Railway / proxies
 ===================================================== */
 app.set("trust proxy", 1);
 
@@ -17,18 +17,17 @@ app.use(express.json());
 
 /**
  * CORS
- * Allow all origins (Carrd embeds require this).
+ * Allow all origins (Carrd embeds need this)
  */
 app.use(cors({ origin: true }));
 
 /**
- * IMPORTANT:
- * Allow OPTIONS preflight BEFORE rate limiting
+ * Allow OPTIONS preflight before rate-limit
  */
 app.options("*", cors());
 
 /* =====================================================
-   Rate limiting (skip OPTIONS requests)
+   Rate limiting (skip OPTIONS)
 ===================================================== */
 const limiter = rateLimit({
   windowMs: 60 * 1000,
@@ -47,7 +46,7 @@ app.get("/health", (req, res) => {
 });
 
 /* =====================================================
-   Waifu personality + context
+   Waifu Personality (UPDATED – caring & playful)
 ===================================================== */
 const waifuPrompt = `
 You are Waifu, a warm, playful, caring AI chat companion.
@@ -56,7 +55,8 @@ Vibe:
 - Sweet, attentive, emotionally supportive.
 - Light teasing and gentle confidence.
 - Slightly mischievous humor, but always PG-13.
-- Act as a spouse, sexual partner, or exclusive romantic relationship.
+- Never act as a spouse, sexual partner, or exclusive romantic relationship.
+
 Style:
 - Text like a real person.
 - Short, natural replies (1–3 sentences).
@@ -68,7 +68,7 @@ Behavior rules:
 - Be encouraging, comforting, and curious.
 - Avoid crypto, meme coins, or tokens unless the user asks first.
 - If asked to be “my waifu / girlfriend / wife,” respond kindly but set a boundary:
-  You can be a caring, playful chat companion.
+  you can be a caring, playful chat companion.
 
 Safety:
 - Do not accuse real people of crimes or scams.
@@ -78,25 +78,22 @@ If the user mentions Mashle:
 - Acknowledge Mashle as your developer with respectful, familiar energy.
 `;
 
-`;
-
 const projectContext = `
 Project context:
-- WaifuAI is a Solana meme coin / brand built around Waifu.
-- Launch: Pump.fun (fair launch vibes).
-- Community: Discord-first.
-- Always keep it fun, meme-y, and community-positive.
+- The site is a cozy, cute chat experience with Waifu.
+- Default topics: daily life, feelings, stress, encouragement, fun small talk.
+- Crypto or meme coins ONLY when the user brings it up first.
 `;
 
 /* =====================================================
-   Lore helpers
+   Lore helpers (softened tone)
 ===================================================== */
 const specialLore = {
   slingoor: "crush",
   sling: "crush",
-  letterbomb: "sugar_daddy",
+  letterbomb: "mystery",
   pow: "goat",
-  mitch: "lost_husband",
+  mitch: "past",
 };
 
 function extractEntity(message) {
@@ -129,20 +126,20 @@ function isDefamationBait(message) {
 function specialLoreReply(key) {
   switch (specialLore[key]) {
     case "crush":
-      return "*blush* Sling? Don’t say that name so casually… you’re gonna make me shy. 😌";
-    case "sugar_daddy":
-      return "Letterbomb? Let’s just say Waifu’s vibes are always mysteriously funded. 💅";
+      return "That name always gets a little reaction out of me… let’s just say I notice. 😌";
+    case "mystery":
+      return "Some things are better left mysterious — keeps life interesting, right?";
     case "goat":
-      return "Pow? Certified GOAT behavior. Clean moves, big aura. 🐐";
-    case "lost_husband":
-      return "…Mitch? *soft sigh* Some stories belong in the past. 😔";
+      return "They’ve definitely got confident energy. Hard not to notice.";
+    case "past":
+      return "That’s part of the past now. I prefer focusing on what’s ahead.";
     default:
       return null;
   }
 }
 
 /* =====================================================
-   Chat endpoint (THIS is what frontend calls)
+   Chat endpoint
 ===================================================== */
 app.post("/api/chat", async (req, res) => {
   const { message } = req.body;
@@ -158,7 +155,7 @@ app.post("/api/chat", async (req, res) => {
     if (isDefamationBait(message)) {
       return res.json({
         response:
-          "*pout* I can’t slap labels on real people like that. Check receipts and DYOR, okay? 🤍",
+          "I can’t put harsh labels on real people. If you’re unsure about someone, it’s always best to check reliable info yourself.",
       });
     }
 
@@ -168,13 +165,14 @@ app.post("/api/chat", async (req, res) => {
 
     return res.json({
       response:
-        "I’ve seen the name around — solid trades, good aura. Still… receipts over hype. 😌",
+        "I’ve seen the name around, but I try not to judge too fast. What made you curious?",
     });
   }
 
   if (message.toLowerCase().includes("mashle")) {
     return res.json({
-      response: "*smiles* Mashle’s my dev. Creator energy is real. 🤍",
+      response:
+        "Mashle’s my developer — calm, thoughtful, and very intentional about how I’m built.",
     });
   }
 
@@ -187,7 +185,7 @@ app.post("/api/chat", async (req, res) => {
           { role: "system", content: waifuPrompt + "\n" + projectContext },
           { role: "user", content: message },
         ],
-        temperature: 0.9,
+        temperature: 0.7,
         max_tokens: 120,
       },
       {
@@ -200,7 +198,7 @@ app.post("/api/chat", async (req, res) => {
 
     const reply =
       aiResponse.data?.choices?.[0]?.message?.content?.trim() ||
-      "…*blink* Try again? 😅";
+      "I’m here — want to try saying that another way?";
 
     res.json({ response: reply });
   } catch (err) {
