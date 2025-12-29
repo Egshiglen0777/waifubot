@@ -5,43 +5,50 @@ const axios = require("axios");
 
 const app = express();
 
-/**
- * ✅ REQUIRED for Railway / proxies when using express-rate-limit
- */
+/* =====================================================
+   REQUIRED for Railway / proxies (rate-limit fix)
+===================================================== */
 app.set("trust proxy", 1);
 
-/**
- * ✅ Middleware
- */
+/* =====================================================
+   Middleware
+===================================================== */
 app.use(express.json());
 
 /**
- * ✅ CORS
- * Allow all origins (Carrd embeds need this).
- * You can lock this down later.
+ * CORS
+ * Allow all origins (Carrd embeds require this).
  */
 app.use(cors({ origin: true }));
 
 /**
- * ✅ Rate limiting (now safe)
+ * IMPORTANT:
+ * Allow OPTIONS preflight BEFORE rate limiting
  */
+app.options("*", cors());
+
+/* =====================================================
+   Rate limiting (skip OPTIONS requests)
+===================================================== */
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === "OPTIONS",
 });
 app.use(limiter);
 
-/**
- * ✅ Health check
- */
+/* =====================================================
+   Health check
+===================================================== */
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "OK" });
 });
 
-/* ================= Waifu Prompt ================= */
-
+/* =====================================================
+   Waifu personality + context
+===================================================== */
 const waifuPrompt = `
 You are Waifu, the AI face of WaifuAI.
 Tone: teasing, high-affection, playful banter, slightly possessive in a joking way.
@@ -60,8 +67,9 @@ Project context:
 - Always keep it fun, meme-y, and community-positive.
 `;
 
-/* ================= Lore ================= */
-
+/* =====================================================
+   Lore helpers
+===================================================== */
 const specialLore = {
   slingoor: "crush",
   sling: "crush",
@@ -112,8 +120,9 @@ function specialLoreReply(key) {
   }
 }
 
-/* ================= Chat Endpoint ================= */
-
+/* =====================================================
+   Chat endpoint (THIS is what frontend calls)
+===================================================== */
 app.post("/api/chat", async (req, res) => {
   const { message } = req.body;
 
@@ -121,7 +130,7 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "Missing field: message" });
   }
 
-  // Lore / fast paths
+  // Fast lore paths
   const entity = extractEntity(message);
 
   if (entity) {
@@ -179,8 +188,9 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-/* ================= Start Server ================= */
-
+/* =====================================================
+   Start server
+===================================================== */
 const port = process.env.PORT || 3000;
 app.listen(port, "0.0.0.0", () => {
   console.log(`Server running on port ${port}`);
