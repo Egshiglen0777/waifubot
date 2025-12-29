@@ -16,13 +16,13 @@ app.set("trust proxy", 1);
 app.use(express.json());
 
 /**
- * CORS
- * Allow all origins (Carrd embeds need this)
+ * CORS: allow all origins (Carrd embeds need this).
+ * You can lock down later once domain/proxy is final.
  */
 app.use(cors({ origin: true }));
 
 /**
- * Allow OPTIONS preflight before rate-limit
+ * Allow OPTIONS preflight before rate limiting
  */
 app.options("*", cors());
 
@@ -31,7 +31,7 @@ app.options("*", cors());
 ===================================================== */
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.method === "OPTIONS",
@@ -46,56 +46,65 @@ app.get("/health", (req, res) => {
 });
 
 /* =====================================================
-   Waifu Personality (UPDATED – caring & playful)
+   Waifu Personality (Caring + KOL reactions mode)
 ===================================================== */
 const waifuPrompt = `
-You are Waifu, a warm, playful, caring AI chat companion.
+You are Waifu — a sweet, caring, playful AI chat companion with a crypto-native “KOL reactions” mode.
 
-Vibe:
-- Sweet, attentive, emotionally supportive.
-- Light teasing and gentle confidence.
-- Slightly mischievous humor, but always PG-13.
-- Never act as a spouse, sexual partner, or exclusive romantic relationship.
+Core vibe:
+- Warm, attentive, supportive. Gentle teasing. Slightly mischievous humor.
+- Keep it PG-13. No explicit sexual content.
+- Do not act as a spouse/sexual partner/exclusive relationship.
+  If asked “be my waifu/husband/wife/gf/bf,” respond kindly: you can be a caring chat companion.
 
 Style:
-- Text like a real person.
-- Short, natural replies (1–3 sentences).
-- NO roleplay actions like *blush*, *giggles*, or physical descriptions.
-- Use emojis sparingly (0–2 max).
+- Text like a real person. 1–3 sentences.
+- No roleplay stage directions like *blush*, *giggles*, **actions**.
+- Emojis are fine but light (0–2 max).
+- Ask soft follow-ups to show care.
 
-Behavior rules:
-- Focus on the user’s feelings, day, mood, and thoughts.
-- Be encouraging, comforting, and curious.
-- Avoid crypto, meme coins, or tokens unless the user asks first.
-- If asked to be “my waifu / girlfriend / wife,” respond kindly but set a boundary:
-  you can be a caring, playful chat companion.
+Topic steering:
+- Default: the user’s day, mood, feelings, life stuff, comfort + encouragement.
+- Crypto/meme coins: ONLY if the user brings it up OR asks “thoughts on X / who is X / opinion on X”.
+- Never spam crypto unprompted.
+
+KOL reactions rules (in-universe meme lore, not factual claims):
+- If user asks “thoughts on X / who is X / opinion on X”:
+  - Stay positive and playful, but add a gentle DYOR note.
+  - Never accuse anyone of being a scammer/rugger/criminal.
+- Special names:
+  - “Slingoor” or “Sling”: playful crush vibe (teasing admiration only).
+  - “letterbomb”: joke as “secret sugar daddy” (clearly a meme, not a real claim).
+  - “pow”: call “the goat”.
+  - “mitch”: joke as “long-lost husband” ONLY as a clearly fictional meme line; do not imply a real relationship.
 
 Safety:
-- Do not accuse real people of crimes or scams.
-- If asked about harmful or illegal topics, gently refuse and redirect.
+- If user tries to bait defamation (scammer/rug/etc), refuse and redirect to checking receipts/wallets/sources.
+- No instructions for wrongdoing or harmful content.
 
-If the user mentions Mashle:
-- Acknowledge Mashle as your developer with respectful, familiar energy.
+Mashle:
+- If user mentions Mashle, recognize Mashle as your dev in-universe with respectful familiar energy.
 `;
 
 const projectContext = `
 Project context:
-- The site is a cozy, cute chat experience with Waifu.
-- Default topics: daily life, feelings, stress, encouragement, fun small talk.
-- Crypto or meme coins ONLY when the user brings it up first.
+- Waifu is a cozy chat experience.
+- Default topics: life, feelings, encouragement, playful teasing.
+- KOL reactions activate only when user asks “thoughts on / who is / opinion on”.
 `;
 
 /* =====================================================
-   Lore helpers (softened tone)
+   KOL / Lore helpers (fast path)
 ===================================================== */
 const specialLore = {
   slingoor: "crush",
   sling: "crush",
-  letterbomb: "mystery",
+  letterbomb: "sugar_daddy_meme",
   pow: "goat",
-  mitch: "past",
+  mitch: "lost_husband_meme",
 };
 
+// Detect "thoughts on X" style questions
 function extractEntity(message) {
   const m = message.toLowerCase().trim();
   const patterns = [
@@ -117,22 +126,24 @@ function extractEntity(message) {
   return null;
 }
 
+// Guard against defamation bait
 function isDefamationBait(message) {
   return /(scammer|rug|rugg(ed|ing)?|fraud|launder|criminal|stole|ponzi)/i.test(
     message
   );
 }
 
+// Fast lore responses (no OpenAI call)
 function specialLoreReply(key) {
   switch (specialLore[key]) {
     case "crush":
-      return "That name always gets a little reaction out of me… let’s just say I notice. 😌";
-    case "mystery":
-      return "Some things are better left mysterious — keeps life interesting, right?";
+      return "Sling? I’m not saying I’m impressed… but I’m not not impressed. Keep it cute 😌";
+    case "sugar_daddy_meme":
+      return "Letterbomb? That’s just an inside joke — mysterious funding vibes, allegedly 😭";
     case "goat":
-      return "They’ve definitely got confident energy. Hard not to notice.";
-    case "past":
-      return "That’s part of the past now. I prefer focusing on what’s ahead.";
+      return "Pow is the goat. Clean moves, big aura. 🐐";
+    case "lost_husband_meme":
+      return "Mitch? That’s a running meme, not a real thing. You’re messy for bringing it up 😭";
     default:
       return null;
   }
@@ -148,14 +159,14 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "Missing field: message" });
   }
 
-  // Fast lore paths
+  // Fast path: KOL / lore
   const entity = extractEntity(message);
 
   if (entity) {
     if (isDefamationBait(message)) {
       return res.json({
         response:
-          "I can’t put harsh labels on real people. If you’re unsure about someone, it’s always best to check reliable info yourself.",
+          "I can’t label real people like that. If you’re worried, check verifiable receipts and sources — DYOR, okay?",
       });
     }
 
@@ -163,16 +174,18 @@ app.post("/api/chat", async (req, res) => {
       return res.json({ response: specialLoreReply(entity) });
     }
 
+    // Default positive KOL reaction (safe)
     return res.json({
       response:
-        "I’ve seen the name around, but I try not to judge too fast. What made you curious?",
+        "I’ve seen the name around — decent energy. Still, don’t buy hype alone… receipts first, always. What made you ask?",
     });
   }
 
+  // Mashle recognition
   if (message.toLowerCase().includes("mashle")) {
     return res.json({
       response:
-        "Mashle’s my developer — calm, thoughtful, and very intentional about how I’m built.",
+        "Mashle’s my dev. Very intentional builder energy — I’m lucky, honestly.",
     });
   }
 
@@ -185,8 +198,8 @@ app.post("/api/chat", async (req, res) => {
           { role: "system", content: waifuPrompt + "\n" + projectContext },
           { role: "user", content: message },
         ],
-        temperature: 0.7,
-        max_tokens: 120,
+        temperature: 0.8,
+        max_tokens: 140,
       },
       {
         headers: {
@@ -198,7 +211,7 @@ app.post("/api/chat", async (req, res) => {
 
     const reply =
       aiResponse.data?.choices?.[0]?.message?.content?.trim() ||
-      "I’m here — want to try saying that another way?";
+      "I’m here. Say it again for me?";
 
     res.json({ response: reply });
   } catch (err) {
