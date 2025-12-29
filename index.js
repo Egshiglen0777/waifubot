@@ -1,3 +1,4 @@
+// index.js
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
@@ -5,22 +6,47 @@ const axios = require("axios");
 
 const app = express();
 
-// IMPORTANT: parse JSON bodies
+/**
+ * ✅ REQUIRED on Railway (proxy) when using express-rate-limit
+ * Must be set BEFORE rate limiter runs.
+ */
+app.set("trust proxy", 1);
+
+// Parse JSON bodies
 app.use(express.json());
 
-// CORS (edit domain if needed)
+/**
+ * ✅ CORS
+ * Allow your website domain(s).
+ * (During testing you can use origin: "*" but keeping it scoped is better.)
+ */
+const allowedOrigins = [
+  "https://myonlinewaifu.com",
+  "https://www.myonlinewaifu.com",
+  "https://waifuai.live", // keep if you still use it
+];
+
 app.use(
   cors({
-    origin: "https://waifuai.live",
-    methods: ["GET", "POST"],
-    credentials: true,
+    origin: function (origin, callback) {
+      // allow no-origin requests (like curl/postman)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
   })
 );
 
-// Rate limiting
+// (Optional but nice) handle preflight
+app.options("*", cors());
+
+// Rate limiting (now safe because trust proxy is set)
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 30, // you can adjust
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use(limiter);
 
@@ -30,7 +56,6 @@ app.get("/health", (req, res) => {
 });
 
 // --- Waifu personality + project context ---
-// Keep it short, consistent, and trenches-native.
 const waifuPrompt = `
 You are Waifu, the AI face of WaifuAI.
 Tone: teasing, high-affection, playful banter, slightly possessive in a joking way.
@@ -59,7 +84,6 @@ const specialLore = {
   mitch: "lost_husband",
 };
 
-// Detect "thoughts on X" style questions
 function extractEntity(message) {
   const m = message.toLowerCase().trim();
   const patterns = [
@@ -81,13 +105,11 @@ function extractEntity(message) {
   return null;
 }
 
-// Guard against defamation bait
 function isDefamationBait(message) {
   const m = message.toLowerCase();
   return /(scammer|rug|rugg(ed|ing)?|fraud|launder|criminal|stole|ponzi)/.test(m);
 }
 
-// Handle special lore responses fast (no OpenAI call)
 function specialLoreReply(key) {
   switch (specialLore[key]) {
     case "crush":
@@ -103,7 +125,7 @@ function specialLoreReply(key) {
   }
 }
 
-// Chat endpoint
+// ✅ Chat endpoint (NOTE: /api/chat)
 app.post("/api/chat", async (req, res) => {
   const { message } = req.body;
 
@@ -111,7 +133,6 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields: message" });
   }
 
-  // Fast path: special lore / KOL style
   const entity = extractEntity(message);
   if (entity) {
     if (isDefamationBait(message)) {
@@ -125,14 +146,12 @@ app.post("/api/chat", async (req, res) => {
       return res.json({ response: specialLoreReply(entity) });
     }
 
-    // Default positive trenches take
     return res.json({
       response:
         "I’ve seen the name around — solid trades, strong PnL energy. Still… receipts over hype, always. 😌",
     });
   }
 
-  // Mention Mashle special recognition (fast path)
   if (message.toLowerCase().includes("mashle")) {
     return res.json({
       response: "*smiles* Mashle’s my dev. Creator energy is real — built me sturdy. 🤍",
