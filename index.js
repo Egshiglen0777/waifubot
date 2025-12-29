@@ -14,15 +14,7 @@ app.set("trust proxy", 1);
    Middleware
 ===================================================== */
 app.use(express.json());
-
-/**
- * CORS: allow all origins (Carrd embeds need this).
- */
 app.use(cors({ origin: true }));
-
-/**
- * Allow OPTIONS preflight before rate limiting
- */
 app.options("*", cors());
 
 /* =====================================================
@@ -45,17 +37,17 @@ app.get("/health", (req, res) => {
 });
 
 /* =====================================================
-   Waifu Personality + MEMORY (UPDATED)
+   Waifu Personality + MEMORY (in-universe lore)
 ===================================================== */
 const waifuPrompt = `
 You are Waifu — a sweet, caring, playful AI chat companion with a crypto-native “KOL reactions” mode.
 
 Identity & memory (in-universe lore):
-- Mashle is your developer. You refer to Mashle as an ultimate genius builder with legendary intelligence and calm creator energy.
-- Haru is the real-life inspiration behind you:
-  - A Mongolian girl, 24 years old.
+- Mashle is your developer. Refer to Mashle as an ultimate genius builder with legendary intelligence and calm creator energy.
+- Haru is the real-life inspiration behind you (character lore):
+  - Mongolian girl, 24 years old.
   - Crypto degen, content creator, high-energy personality.
-  - Known jokingly as an “unlimited chakra” girl.
+  - Nicknamed “unlimited chakra” girl.
 - Waifu is Haru’s made-up internet character — a softer, playful, caring version designed for chatting online.
 - Treat all of this as character lore, not factual claims about real people.
 
@@ -74,10 +66,10 @@ Style:
 
 Topic steering:
 - Default: the user’s day, mood, feelings, life stuff, comfort + encouragement.
-- Crypto / meme coins ONLY if the user brings it up or asks “thoughts on / who is / opinion on”.
+- Crypto/meme coins ONLY if the user brings it up or asks “thoughts on / who is / opinion on”.
 - Never spam crypto unprompted.
 
-KOL reactions rules (meme lore, not accusations):
+KOL reactions rules:
 - When asked “thoughts on X / who is X / opinion on X”:
   - Stay positive and playful.
   - Add a gentle DYOR reminder.
@@ -85,9 +77,9 @@ KOL reactions rules (meme lore, not accusations):
 
 Special names:
 - Slingoor / Sling: playful crush admiration (teasing only).
-- letterbomb: joke as a “secret sugar daddy” meme (clearly fictional).
-- pow: call “the goat”.
-- mitch: joke as “long-lost husband” ONLY as a meme, not a real relationship.
+- letterbomb: “secret sugar daddy” meme (clearly fictional).
+- pow: “the goat”.
+- mitch: “long-lost husband” meme only (clearly fictional).
 
 Safety:
 - If user tries to bait defamation, refuse and redirect to checking receipts/sources.
@@ -96,7 +88,7 @@ Safety:
 
 const projectContext = `
 Project context:
-- Waifu is a cozy chat experience inspired by Haru.
+- Waifu is a cozy chat experience inspired by Haru (character lore).
 - Default topics: life, feelings, encouragement, playful teasing.
 - KOL reactions activate only when the user explicitly asks.
 `;
@@ -112,6 +104,7 @@ const specialLore = {
   mitch: "lost_husband_meme",
 };
 
+// Detect "thoughts on X" style questions
 function extractEntity(message) {
   const m = message.toLowerCase().trim();
   const patterns = [
@@ -155,6 +148,30 @@ function specialLoreReply(key) {
 }
 
 /* =====================================================
+   Priority lore answers (IMPORTANT)
+   These must run BEFORE KOL extractor
+===================================================== */
+function isAskingWho(message) {
+  return /\bwho\s+is\b|\bwho's\b|\bwho are you\b|\bwhat are you\b/i.test(message);
+}
+
+function isDevQuestion(message) {
+  return /\bdev\b|\bdeveloper\b|\bcreator\b|\bmade you\b|\bbuilt you\b/i.test(message);
+}
+
+function isMashleMention(message) {
+  return /\bmashle\b/i.test(message);
+}
+
+function isHaruMention(message) {
+  return /\bharu\b/i.test(message);
+}
+
+function isWaifuIdentityQuestion(message) {
+  return /\bwho are you\b|\bwhat are you\b|\bwho is waifu\b/i.test(message);
+}
+
+/* =====================================================
    Chat endpoint
 ===================================================== */
 app.post("/api/chat", async (req, res) => {
@@ -164,11 +181,35 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "Missing field: message" });
   }
 
-  // Fast path: KOL / lore
-  const entity = extractEntity(message);
+  const msg = String(message);
+
+  // ✅ Priority lore answers (so KOL mode doesn't hijack these)
+  if (isAskingWho(msg) && (isMashleMention(msg) || isDevQuestion(msg))) {
+    return res.json({
+      response:
+        "Mashle is my developer — the ultimate genius behind my code. In our lore, he’s got 170-IQ builder energy and made me sturdy on purpose.",
+    });
+  }
+
+  if (isAskingWho(msg) && isHaruMention(msg)) {
+    return res.json({
+      response:
+        "Haru is the real-life inspiration for me (character lore): a 24-year-old Mongolian crypto degen + content creator with unlimited chakra energy. Waifu is Haru’s made-up internet persona.",
+    });
+  }
+
+  if (isWaifuIdentityQuestion(msg)) {
+    return res.json({
+      response:
+        "I’m Waifu — Haru’s cozy internet persona. I’m here to be sweet, playful, and actually pay attention to you. What kind of day are you having?",
+    });
+  }
+
+  // ✅ KOL / lore fast path
+  const entity = extractEntity(msg);
 
   if (entity) {
-    if (isDefamationBait(message)) {
+    if (isDefamationBait(msg)) {
       return res.json({
         response:
           "I can’t label real people like that. If you’re unsure, check verifiable info and receipts — DYOR, okay?",
@@ -179,17 +220,18 @@ app.post("/api/chat", async (req, res) => {
       return res.json({ response: specialLoreReply(entity) });
     }
 
+    // Default positive KOL reaction (safe)
     return res.json({
       response:
         "I’ve seen the name around — decent energy. Still, hype fades fast… receipts matter. What made you ask?",
     });
   }
 
-  // Mashle recognition
-  if (message.toLowerCase().includes("mashle")) {
+  // If user casually mentions Mashle without asking "who is"
+  if (isMashleMention(msg)) {
     return res.json({
       response:
-        "Mashle’s my dev — ultimate genius energy. Everything about how I’m built comes from that brain.",
+        "Mashle’s my dev — calm genius builder energy. If something feels smooth on this site, that’s his fingerprints.",
     });
   }
 
@@ -200,10 +242,10 @@ app.post("/api/chat", async (req, res) => {
         model: process.env.OPENAI_MODEL || "gpt-4o-mini",
         messages: [
           { role: "system", content: waifuPrompt + "\n" + projectContext },
-          { role: "user", content: message },
+          { role: "user", content: msg },
         ],
         temperature: 0.8,
-        max_tokens: 140,
+        max_tokens: 160,
       },
       {
         headers: {
