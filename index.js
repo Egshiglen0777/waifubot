@@ -1,4 +1,3 @@
-// index.js
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
@@ -7,55 +6,42 @@ const axios = require("axios");
 const app = express();
 
 /**
- * ✅ REQUIRED on Railway (proxy) when using express-rate-limit
- * Must be set BEFORE rate limiter runs.
+ * ✅ REQUIRED for Railway / proxies when using express-rate-limit
  */
 app.set("trust proxy", 1);
 
-// Parse JSON bodies
+/**
+ * ✅ Middleware
+ */
 app.use(express.json());
 
 /**
  * ✅ CORS
- * Allow your website domain(s).
- * (During testing you can use origin: "*" but keeping it scoped is better.)
+ * Allow all origins (Carrd embeds need this).
+ * You can lock this down later.
  */
-const allowedOrigins = [
-  "https://myonlinewaifu.com",
-  "https://www.myonlinewaifu.com",
-  "https://waifuai.live", // keep if you still use it
-];
+app.use(cors({ origin: true }));
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // allow no-origin requests (like curl/postman)
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "OPTIONS"],
-  })
-);
-
-// (Optional but nice) handle preflight
-app.options("*", cors());
-
-// Rate limiting (now safe because trust proxy is set)
+/**
+ * ✅ Rate limiting (now safe)
+ */
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30, // you can adjust
+  max: 30,
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use(limiter);
 
-// Health check endpoint
+/**
+ * ✅ Health check
+ */
 app.get("/health", (req, res) => {
   res.status(200).json({ status: "OK" });
 });
 
-// --- Waifu personality + project context ---
+/* ================= Waifu Prompt ================= */
+
 const waifuPrompt = `
 You are Waifu, the AI face of WaifuAI.
 Tone: teasing, high-affection, playful banter, slightly possessive in a joking way.
@@ -70,12 +56,12 @@ const projectContext = `
 Project context:
 - WaifuAI is a Solana meme coin / brand built around Waifu.
 - Launch: Pump.fun (fair launch vibes).
-- Community: Discord-first (link provided by the site).
-- Tokenomics: (fill this later with your real details).
+- Community: Discord-first.
 - Always keep it fun, meme-y, and community-positive.
 `;
 
-// Special lore rules (meme universe)
+/* ================= Lore ================= */
+
 const specialLore = {
   slingoor: "crush",
   sling: "crush",
@@ -106,8 +92,9 @@ function extractEntity(message) {
 }
 
 function isDefamationBait(message) {
-  const m = message.toLowerCase();
-  return /(scammer|rug|rugg(ed|ing)?|fraud|launder|criminal|stole|ponzi)/.test(m);
+  return /(scammer|rug|rugg(ed|ing)?|fraud|launder|criminal|stole|ponzi)/i.test(
+    message
+  );
 }
 
 function specialLoreReply(key) {
@@ -125,20 +112,23 @@ function specialLoreReply(key) {
   }
 }
 
-// ✅ Chat endpoint (NOTE: /api/chat)
+/* ================= Chat Endpoint ================= */
+
 app.post("/api/chat", async (req, res) => {
   const { message } = req.body;
 
   if (!message) {
-    return res.status(400).json({ error: "Missing required fields: message" });
+    return res.status(400).json({ error: "Missing field: message" });
   }
 
+  // Lore / fast paths
   const entity = extractEntity(message);
+
   if (entity) {
     if (isDefamationBait(message)) {
       return res.json({
         response:
-          "*pout* I can’t slap labels on real people like that. If you’re worried, check wallets, receipts, and reputable sources. DYOR, honey. 🤍",
+          "*pout* I can’t slap labels on real people like that. Check receipts and DYOR, okay? 🤍",
       });
     }
 
@@ -148,18 +138,18 @@ app.post("/api/chat", async (req, res) => {
 
     return res.json({
       response:
-        "I’ve seen the name around — solid trades, strong PnL energy. Still… receipts over hype, always. 😌",
+        "I’ve seen the name around — solid trades, good aura. Still… receipts over hype. 😌",
     });
   }
 
   if (message.toLowerCase().includes("mashle")) {
     return res.json({
-      response: "*smiles* Mashle’s my dev. Creator energy is real — built me sturdy. 🤍",
+      response: "*smiles* Mashle’s my dev. Creator energy is real. 🤍",
     });
   }
 
   try {
-    const response = await axios.post(
+    const aiResponse = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
         model: process.env.OPENAI_MODEL || "gpt-4o-mini",
@@ -167,8 +157,8 @@ app.post("/api/chat", async (req, res) => {
           { role: "system", content: waifuPrompt + "\n" + projectContext },
           { role: "user", content: message },
         ],
-        max_tokens: 120,
         temperature: 0.9,
+        max_tokens: 120,
       },
       {
         headers: {
@@ -178,15 +168,19 @@ app.post("/api/chat", async (req, res) => {
       }
     );
 
-    const waifuResponse = response.data.choices?.[0]?.message?.content?.trim();
-    res.json({ response: waifuResponse || "…*blink* Try that again? 😅" });
-  } catch (error) {
-    console.error("OpenAI API Error:", error?.response?.data || error.message);
-    res.status(500).json({ error: "Something went wrong" });
+    const reply =
+      aiResponse.data?.choices?.[0]?.message?.content?.trim() ||
+      "…*blink* Try again? 😅";
+
+    res.json({ response: reply });
+  } catch (err) {
+    console.error("OpenAI error:", err?.response?.data || err.message);
+    res.status(500).json({ error: "AI request failed" });
   }
 });
 
-// Start server
+/* ================= Start Server ================= */
+
 const port = process.env.PORT || 3000;
 app.listen(port, "0.0.0.0", () => {
   console.log(`Server running on port ${port}`);
