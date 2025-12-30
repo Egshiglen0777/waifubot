@@ -77,7 +77,6 @@ KOL reactions rules:
 
 Special names:
 - Slingoor / Sling: playful crush admiration (teasing only).
-- letterbomb: “secret sugar daddy” meme (clearly fictional).
 - pow: “the goat”.
 - mitch: “long-lost husband” meme only (clearly fictional).
 
